@@ -1,0 +1,12 @@
+{
+  "name": "delivery-missing-check",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "check": "node delivery-missing-check.js"
+  },
+  "dependencies": {
+    "xlsx": "^0.18.5"
+  }
+}
