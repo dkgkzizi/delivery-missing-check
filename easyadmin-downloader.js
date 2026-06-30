@@ -122,7 +122,12 @@ async function dismissPopups(frame) {
     'a:has-text("닫기")',
     'a:has-text("확인")',
     'a:has-text("바로가기")',
-    'a:has-text("다운로드 신청")'
+    'a:has-text("다운로드 신청")',
+    '*:has-text("팝업 전체 닫기")',
+    '*:has-text("닫기")',
+    '*:has-text("확인")',
+    '*:has-text("바로가기")',
+    '*:has-text("다운로드 신청")'
   ];
 
   for (const selector of selectors) {
@@ -253,11 +258,13 @@ async function run() {
       // Click top menu '주문배송관리'
       await dismissPopups(page);
       try { await page.locator('text=주문배송관리').first().click({ timeout: 5000 }); } catch (e) { /* ignore */ }
-      await page.waitForTimeout(800);
+      await page.waitForTimeout(1200);
       await dismissPopups(page);
       // Click left side menu '확장주문검색2'
       try { await page.locator('text=확장주문검색2').first().click({ timeout: 5000 }); } catch (e) { /* ignore */ }
       await page.waitForLoadState('networkidle');
+      await dismissPopups(page);
+      await page.waitForTimeout(800);
       await dismissPopups(page);
 
       // Fill period = 발주일
