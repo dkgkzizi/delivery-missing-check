@@ -4,7 +4,9 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "check": "node delivery-missing-check.js"
+    "check": "node delivery-missing-check.js",
+    "start": "npx serve .",
+    "build": "echo 'No build step required for static site'"
   },
   "dependencies": {
     "xlsx": "^0.18.5"

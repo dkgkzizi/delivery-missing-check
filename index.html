@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>배송 누락 체크</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 980px; margin: 0 auto; padding: 24px; line-height: 1.6; }
+    h1 { margin-bottom: 0.5rem; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 20px; margin-bottom: 20px; background: #fff; }
+    label { display: block; margin-bottom: 0.5rem; font-weight: 600; }
+    input, textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 1rem; }
+    textarea { resize: vertical; min-height: 120px; }
+    .row { display: grid; gap: 16px; grid-template-columns: 1fr 1fr; align-items: center; }
+    .row .full { grid-column: 1 / -1; }
+    button { border: none; border-radius: 10px; background: #2563eb; color: #fff; padding: 12px 18px; cursor: pointer; font-size: 1rem; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 0.95rem; }
+    th { background: #f3f4f6; }
+    .notice { margin-top: 0.5rem; color: #555; }
+    .hidden { display: none; }
+    @media (max-width: 700px) { .row { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <h1>배송 누락 / 미스캔 체크</h1>
+  <div class="card">
+    <div class="row">
+      <div class="full">
+        <label for="fileInput">EasyAdmin 엑셀 파일 선택</label>
+        <input type="file" id="fileInput" accept=".xls,.xlsx" />
+      </div>
+      <div class="full">
+        <label for="excludeSellers">제외할 판매처 키워드 (쉼표 구분)</label>
+        <input id="excludeSellers" value="쿠팡,B2B,B2C" />
+      </div>
+      <div class="full">
+        <label for="excludeOptions">판매처 옵션 제외 키워드 (쉼표 구분)</label>
+        <input id="excludeOptions" value="순차출고,예약출고,예약,출고" />
+      </div>
+      <div>
+        <label><input type="checkbox" id="skipNegative" checked /> 가용재고 음수 행 제외</label>
+      </div>
+      <div class="full">
+        <button id="runButton">필터 실행</button>
+        <a id="downloadLink" class="hidden" download="filtered_delivery_missing.csv">필터 결과 CSV 다운로드</a>
+        <div class="notice">웹에서 직접 파일을 읽고 필터링합니다. 서버 업로드는 없습니다.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div class="full">
+        <h2>요약</h2>
+        <div id="summaryText">파일을 선택하고 실행 버튼을 누르세요.</div>
+      </div>
+      <div class="full">
+        <div id="tableContainer"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script>
+    const fileInput = document.getElementById('fileInput');
+    const runButton = document.getElementById('runButton');
+    const summaryText = document.getElementById('summaryText');
+    const tableContainer = document.getElementById('tableContainer');
+    const downloadLink = document.getElementById('downloadLink');
+    const excludeSellersInput = document.getElementById('excludeSellers');
+    const excludeOptionsInput = document.getElementById('excludeOptions');
+    const skipNegativeInput = document.getElementById('skipNegative');
+
+    const headers = ['주문번호','상품명','옵션명','상품수량','가용재고','송장번호','배송일'];
+
+    function createCSV(rows) {
+      const escapeValue = v => '"' + String(v || '').replace(/"/g, '""') + '"';
+      return [headers.map(escapeValue).join(',')].concat(rows.map(row => headers.map(field => escapeValue(row[field])).join(','))).join('\n');
+    }
+
+    function renderSummary(rows) {
+      if (!rows.length) {
+        summaryText.textContent = '조건에 맞는 결과가 없습니다.';
+        tableContainer.innerHTML = '';
+        downloadLink.classList.add('hidden');
+        return;
+      }
+      summaryText.textContent = `총 ${rows.length}개 행이 필터링되었습니다. 아래는 최대 50개 결과입니다.`;
+      const sliced = rows.slice(0, 50);
+      const th = headers.map(h => `<th>${h}</th>`).join('');
+      const tr = sliced.map(row => '<tr>' + headers.map(field => `<td>${String(row[field] || '')}</td>`).join('') + '</tr>').join('');
+      tableContainer.innerHTML = `<table><thead><tr>${th}</tr></thead><tbody>${tr}</tbody></table>`;
+      const csv = createCSV(rows);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      downloadLink.href = URL.createObjectURL(blob);
+      downloadLink.classList.remove('hidden');
+    }
+
+    function filterRows(rows) {
+      if (rows.length === 0) return [];
+      const headerRow = rows[0].map(cell => String(cell || '').trim());
+      const indexOf = name => headerRow.findIndex(h => h === name);
+      const idxSeller = indexOf('판매처');
+      const idxStock = indexOf('가용재고');
+      const idxSellerOption = indexOf('판매처 옵션');
+      const idxOrder = indexOf('주문번호');
+      const idxProduct = indexOf('상품명');
+      const idxOption = indexOf('옵션명');
+      const idxQty = indexOf('상품수량');
+      const idxTracking = indexOf('송장번호');
+      const idxDate = indexOf('배송일');
+
+      const sellers = excludeSellersInput.value.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+      const options = excludeOptionsInput.value.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+      const skipNegative = skipNegativeInput.checked;
+
+      const out = [];
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        const seller = idxSeller !== -1 ? String(row[idxSeller] || '').toLowerCase() : '';
+        const stock = idxStock !== -1 ? String(row[idxStock] || '') : '';
+        const sellerOption = idxSellerOption !== -1 ? String(row[idxSellerOption] || '').toLowerCase() : '';
+
+        if (sellers.some(keyword => keyword && seller.includes(keyword))) continue;
+        if (skipNegative) {
+          const num = parseFloat(String(stock).replace(/[^0-9.-]/g, ''));
+          if (!Number.isNaN(num) && num < 0) continue;
+        }
+        if (options.some(keyword => keyword && sellerOption.includes(keyword))) continue;
+
+        out.push({
+          주문번호: idxOrder !== -1 ? row[idxOrder] || '' : '',
+          상품명: idxProduct !== -1 ? row[idxProduct] || '' : '',
+          옵션명: idxOption !== -1 ? row[idxOption] || '' : '',
+          상품수량: idxQty !== -1 ? row[idxQty] || '' : '',
+          가용재고: idxStock !== -1 ? row[idxStock] || '' : '',
+          송장번호: idxTracking !== -1 ? row[idxTracking] || '' : '',
+          배송일: idxDate !== -1 ? row[idxDate] || '' : ''
+        });
+      }
+      return out;
+    }
+
+    async function runFilter() {
+      const file = fileInput.files?.[0];
+      if (!file) {
+        alert('엑셀 파일을 선택해 주세요.');
+        return;
+      }
+      runButton.disabled = true;
+      summaryText.textContent = '처리 중입니다...';
+      tableContainer.innerHTML = '';
+      downloadLink.classList.add('hidden');
+
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      const filtered = filterRows(rows);
+      renderSummary(filtered);
+      runButton.disabled = false;
+    }
+
+    runButton.addEventListener('click', runFilter);
+  </script>
+</body>
+</html>
