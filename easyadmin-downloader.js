@@ -300,22 +300,24 @@ async function run() {
         }
       }
 
-      // Click top menu '주문배송관리'
-      await dismissPopups(page);
-      await clickTopMenu(page, '주문배송관리');
-      await page.waitForTimeout(1200);
-      await dismissPopups(page);
-      await page.waitForTimeout(600);
-      await dismissPopups(page);
-      // 주문배송관리 팝업 닫기 재시도
-      await clickIfExists(page.locator('button:has-text("팝업 닫기"), a:has-text("팝업 닫기"), *:has-text("팝업 닫기")'));
-      await dismissPopups(page);
-      // Click left side menu '확장주문검색2'
-      await clickSideMenu(page, '확장주문검색2');
-      await page.waitForLoadState('networkidle');
-      await dismissPopups(page);
-      await page.waitForTimeout(800);
-      await dismissPopups(page);
+      if (!manual) {
+        // Click top menu '주문배송관리'
+        await dismissPopups(page);
+        await clickTopMenu(page, '주문배송관리');
+        await page.waitForTimeout(1200);
+        await dismissPopups(page);
+        await page.waitForTimeout(600);
+        await dismissPopups(page);
+        // 주문배송관리 팝업 닫기 재시도
+        await clickIfExists(page.locator('button:has-text("팝업 닫기"), a:has-text("팝업 닫기"), *:has-text("팝업 닫기")'));
+        await dismissPopups(page);
+        // Click left side menu '확장주문검색2'
+        await clickSideMenu(page, '확장주문검색2');
+        await page.waitForLoadState('networkidle');
+        await dismissPopups(page);
+        await page.waitForTimeout(800);
+        await dismissPopups(page);
+      }
 
       // Fill period = 발주일
       const searchArea = await locateSearchArea(page);
