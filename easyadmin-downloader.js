@@ -108,6 +108,21 @@ async function selectDropdownInArea(area, optionText) {
   return false;
 }
 
+async function clickMenuItem(page, label, areaSelector) {
+  const area = areaSelector ? page.locator(areaSelector).first() : page;
+  const locator = area.locator(`xpath=.//a[normalize-space(text())="${label}"] | .//button[normalize-space(text())="${label}"] | .//span[normalize-space(text())="${label}"]`);
+  if (await locator.count()) {
+    await locator.first().click({ timeout: 5000 }).catch(() => {});
+    return true;
+  }
+  const fallback = page.locator(`text=${label}`);
+  if (await fallback.count()) {
+    await fallback.first().click({ timeout: 5000 }).catch(() => {});
+    return true;
+  }
+  return false;
+}
+
 async function dismissPopups(frame) {
   const selectors = [
     'button:has-text("팝업 전체 닫기")',
@@ -175,6 +190,17 @@ async function run() {
     browser = await chromium.launch({ headless: headlessMode, slowMo: process.env.SLOWMO ? Number(process.env.SLOWMO) : 0 });
     context = await browser.newContext({ acceptDownloads: true });
     page = await context.newPage();
+
+    context.on('page', async popup => {
+      if (popup !== page) {
+        try {
+          console.log('Closing extra popup/tab opened by the site');
+          await popup.close();
+        } catch (e) {
+          console.error('Failed to close extra popup/tab:', e);
+        }
+      }
+    });
 
     page.on('dialog', async dialog => {
       console.log('JS dialog detected:', dialog.message());
@@ -260,7 +286,7 @@ async function run() {
 
       // Click top menu '주문배송관리'
       await dismissPopups(page);
-      try { await page.locator('text=주문배송관리').first().click({ timeout: 5000 }); } catch (e) { /* ignore */ }
+      await clickMenuItem(page, '주문배송관리', 'header, nav, [role=navigation], .top-menu, .gnb');
       await page.waitForTimeout(1200);
       await dismissPopups(page);
       await page.waitForTimeout(600);
@@ -269,7 +295,7 @@ async function run() {
       await clickIfExists(page.locator('button:has-text("팝업 닫기"), a:has-text("팝업 닫기"), *:has-text("팝업 닫기")'));
       await dismissPopups(page);
       // Click left side menu '확장주문검색2'
-      try { await page.locator('text=확장주문검색2').first().click({ timeout: 5000 }); } catch (e) { /* ignore */ }
+      await clickMenuItem(page, '확장주문검색2', '.sidebar, aside, .side-menu, .left-menu, [role=navigation]');
       await page.waitForLoadState('networkidle');
       await dismissPopups(page);
       await page.waitForTimeout(800);
