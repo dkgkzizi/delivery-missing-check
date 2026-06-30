@@ -20,8 +20,9 @@ if (!EASYADMIN_DOMAIN || !EASYADMIN_USER || !EASYADMIN_PASS) {
 async function fillFirst(page, selectors, value) {
   for (const sel of selectors) {
     const element = page.locator(sel);
-    if (await element.count()) {
-      await element.fill(value);
+    const cnt = await element.count();
+    if (cnt) {
+      await element.first().fill(value);
       return true;
     }
   }
@@ -53,7 +54,8 @@ async function run() {
     await fs.promises.mkdir(DOWNLOAD_DIR, { recursive: true });
     await fs.promises.mkdir(DEBUG_DIR, { recursive: true });
 
-    browser = await chromium.launch({ headless: true });
+    const headlessMode = (process.env.HEADLESS || 'true') === 'true';
+    browser = await chromium.launch({ headless: headlessMode, slowMo: process.env.SLOWMO ? Number(process.env.SLOWMO) : 0 });
     context = await browser.newContext({ acceptDownloads: true });
     page = await context.newPage();
 
@@ -104,6 +106,16 @@ async function run() {
       await page.goto(DOWNLOAD_URL, { waitUntil: 'networkidle' });
     } else {
       console.log('다운로드 URL이 설정되지 않았습니다. 로그인 후 사용자 지정 URL을 지정하세요(EASYADMIN_DOWNLOAD_URL).');
+    }
+
+    // Manual mode: allow user to navigate in the opened browser and press Enter to continue.
+    const manual = (process.env.MANUAL || 'false') === 'true';
+    if (manual && !headlessMode) {
+      console.log('MANUAL mode active: 브라우저에서 다운로드 페이지로 이동한 뒤 Enter를 눌러주세요.');
+      process.stdin.resume();
+      await new Promise(resolve => process.stdin.once('data', () => resolve()));
+      process.stdin.pause();
+      console.log('Continuing after manual confirmation...');
     }
 
     const downloadFile = path.resolve(DOWNLOAD_DIR, DOWNLOAD_FILENAME);
