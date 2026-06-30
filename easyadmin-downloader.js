@@ -46,6 +46,61 @@ async function saveDebug(page, namePrefix = 'error') {
   }
 }
 
+async function clickIfExists(locator) {
+  const count = await locator.count();
+  for (let i = 0; i < count; i++) {
+    try {
+      await locator.nth(i).click({ timeout: 2000 }).catch(() => {});
+    } catch (err) {
+      // ignore click failures
+    }
+  }
+}
+
+async function dismissPopups(frame) {
+  const selectors = [
+    'button:has-text("팝업 전체 닫기")',
+    'button:has-text("전체 닫기")',
+    'button:has-text("닫기")',
+    'button:has-text("확인")',
+    'button:has-text("취소")',
+    'button:has-text("바로가기")',
+    'button:has-text("다운로드 신청")',
+    'button:has-text("다운로드 신청하기")',
+    'a:has-text("팝업 전체 닫기")',
+    'a:has-text("닫기")',
+    'a:has-text("확인")',
+    'a:has-text("바로가기")',
+    'a:has-text("다운로드 신청")'
+  ];
+
+  for (const selector of selectors) {
+    const locator = frame.locator(selector);
+    await clickIfExists(locator);
+  }
+
+  const closeSelectors = [
+    '.modal-close',
+    '.close-button',
+    '.popup-close',
+    '.layer-close',
+    '.btn-close',
+    '[aria-label="닫기"]',
+    '[aria-label="close"]',
+    '.btn_modal_close',
+    '.btn-pop-close'
+  ];
+
+  for (const selector of closeSelectors) {
+    const locator = frame.locator(selector);
+    await clickIfExists(locator);
+  }
+
+  for (const child of frame.childFrames()) {
+    await dismissPopups(child);
+  }
+}
+
 async function run() {
   let browser;
   let context;
@@ -59,8 +114,14 @@ async function run() {
     context = await browser.newContext({ acceptDownloads: true });
     page = await context.newPage();
 
+    page.on('dialog', async dialog => {
+      console.log('JS dialog detected:', dialog.message());
+      try { await dialog.accept(); } catch (err) { console.error('Dialog accept failed:', err); }
+    });
+
     console.log('Opening EasyAdmin login page...');
     await page.goto(EASYADMIN_URL, { waitUntil: 'domcontentloaded' });
+    await dismissPopups(page);
 
     const domainFilled = await fillFirst(page, [
       'input[name*=domain]',
@@ -136,11 +197,14 @@ async function run() {
       }
 
       // Click top menu '주문배송관리'
+      await dismissPopups(page);
       try { await page.locator('text=주문배송관리').first().click({ timeout: 5000 }); } catch (e) { /* ignore */ }
       await page.waitForTimeout(800);
+      await dismissPopups(page);
       // Click left side menu '확장주문검색2'
       try { await page.locator('text=확장주문검색2').first().click({ timeout: 5000 }); } catch (e) { /* ignore */ }
       await page.waitForLoadState('networkidle');
+      await dismissPopups(page);
 
       // Fill period = 발주일 (try to select option)
       try {
@@ -180,7 +244,7 @@ async function run() {
       await page.waitForTimeout(1000);
 
       // Dismiss any popups now
-      await dismissCommonPopups();
+      await dismissPopups(page);
 
       // Click download button
       try {
@@ -191,7 +255,7 @@ async function run() {
           await downloadLoc.click().catch(()=>{});
           // after clicking it may open popups; attempt to handle them
           await page.waitForTimeout(1000);
-          await dismissCommonPopups();
+          await dismissPopups(page);
           download = await dlPromise.catch(()=>null);
         }
       } catch (e) {
