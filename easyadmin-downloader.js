@@ -115,10 +115,12 @@ async function clickMenuItem(page, label, areaSelector) {
     await locator.first().click({ timeout: 5000 }).catch(() => {});
     return true;
   }
-  const fallback = page.locator(`text=${label}`);
-  if (await fallback.count()) {
-    await fallback.first().click({ timeout: 5000 }).catch(() => {});
-    return true;
+  if (!areaSelector) {
+    const fallback = page.locator(`text=${label}`);
+    if (await fallback.count()) {
+      await fallback.first().click({ timeout: 5000 }).catch(() => {});
+      return true;
+    }
   }
   return false;
 }
