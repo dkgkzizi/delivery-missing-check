@@ -164,6 +164,16 @@ async function clickSideMenu(page, label) {
   return false;
 }
 
+async function closeDatePicker(page) {
+  try {
+    await page.keyboard.press('Escape').catch(() => {});
+    await clickIfExists(page.locator('button:has-text("닫기"), a:has-text("닫기"), span:has-text("닫기")'));
+    await page.waitForTimeout(300);
+  } catch (e) {
+    // ignore if no date picker open
+  }
+}
+
 async function dismissPopups(frame) {
   const selectors = [
     'button:has-text("팝업 전체 닫기")',
@@ -359,6 +369,7 @@ async function run() {
 
       // Fill the date/time range
       await fillDateFields(page, `${yesterdayStr} 16:00`, `${todayStr} 23:59`);
+      await closeDatePicker(page);
 
       // Set 상태 = 송장 and C/S = 정상+교환
       try { await selectDropdownInArea(searchArea, '송장'); } catch (e) {}
