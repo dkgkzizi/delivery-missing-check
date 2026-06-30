@@ -121,19 +121,115 @@ async function run() {
     const downloadFile = path.resolve(DOWNLOAD_DIR, DOWNLOAD_FILENAME);
     let download;
 
+    // Try to navigate to the search page and perform the filter + download flow.
     try {
-      // start waiting for download, then click
-      const clickPromise = (async () => {
-        await page.click('a:has-text("엑셀"), button:has-text("엑셀"), a:has-text("다운로드"), button:has-text("다운로드")');
-      })();
-      download = await Promise.race([
-        context.waitForEvent('download', { timeout: 20000 }),
-        (async () => { await clickPromise; return null; })()
-      ]);
+      // Close any modal/popups that may block interaction (generic attempt)
+      async function dismissCommonPopups() {
+        const btnTexts = ['확인', '닫기', '취소', '확인했습니다', '바로가기', '다운로드 신청', '다운로드 신청하기'];
+        for (const t of btnTexts) {
+          const locs = page.locator(`button:has-text("${t}"), a:has-text("${t}"), input:has-text("${t}")`);
+          const cnt = await locs.count();
+          for (let i = 0; i < cnt; i++) {
+            try { await locs.nth(i).click({ timeout: 2000 }).catch(() => {}); } catch(e) {}
+          }
+        }
+      }
+
+      // Click top menu '주문배송관리'
+      try { await page.locator('text=주문배송관리').first().click({ timeout: 5000 }); } catch (e) { /* ignore */ }
+      await page.waitForTimeout(800);
+      // Click left side menu '확장주문검색2'
+      try { await page.locator('text=확장주문검색2').first().click({ timeout: 5000 }); } catch (e) { /* ignore */ }
+      await page.waitForLoadState('networkidle');
+
+      // Fill period = 발주일 (try to select option)
+      try {
+        // attempt to find a select that contains the option text
+        const selects = await page.$$('select');
+        for (const s of selects) {
+          const opt = await s.$(`option:has-text("발주일")`);
+          if (opt) { await s.selectOption({ index: await (await s.$$('option')).then(opts=>opts.findIndex(o=>o === opt)) }).catch(()=>{}); break; }
+        }
+      } catch (e) {}
+
+      // Compute date strings: yesterday 16:00 to today 23:59
+      const now = new Date();
+      const todayStr = now.toISOString().slice(0,10);
+      const y = new Date(now.getTime() - 24*3600*1000);
+      const yesterdayStr = y.toISOString().slice(0,10);
+
+      // Try to fill date inputs (various possible selectors)
+      const datePairs = [
+        ['input[name*=start]', `${yesterdayStr} 16:00`],
+        ['input[name*=end]', `${todayStr} 23:59`],
+        ['input[placeholder*=시작]', `${yesterdayStr} 16:00`],
+        ['input[placeholder*=종료]', `${todayStr} 23:59`],
+        ['input[type=date]', yesterdayStr]
+      ];
+      for (const [sel, val] of datePairs) {
+        try { const els = page.locator(sel); if (await els.count()) { await els.first().fill(val).catch(()=>{}); } } catch(e){}
+      }
+
+      // Set 상태 = 송장, C/S = 정상+교환 if possible
+      try { await page.locator('text=상태').first().click().catch(()=>{}); await page.locator('text=송장').first().click().catch(()=>{}); } catch (e) {}
+      try { await page.locator('text=C/S').first().click().catch(()=>{}); await page.locator('text=정상+교환').first().click().catch(()=>{}); } catch (e) {}
+
+      // Click 검색
+      try { await page.locator('button:has-text("검색"), input:has-text("검색")').first().click({ timeout: 5000 }); } catch (e) {}
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(1000);
+
+      // Dismiss any popups now
+      await dismissCommonPopups();
+
+      // Click download button
+      try {
+        const downloadLoc = page.locator('button:has-text("다운로드"), a:has-text("다운로드"), button:has-text("엑셀"), a:has-text("엑셀")').first();
+        if (await downloadLoc.count()) {
+          // start waiting for download
+          const dlPromise = context.waitForEvent('download', { timeout: 120000 });
+          await downloadLoc.click().catch(()=>{});
+          // after clicking it may open popups; attempt to handle them
+          await page.waitForTimeout(1000);
+          await dismissCommonPopups();
+          download = await dlPromise.catch(()=>null);
+        }
+      } catch (e) {
+        console.error('다운로드 클릭 시도 중 예외:', e);
+      }
+
+      // If a popup asks to proceed to download manager (바로가기) try clicking it
+      try { await page.locator('a:has-text("바로가기"), button:has-text("바로가기")').first().click({ timeout: 3000 }).catch(()=>{}); } catch(e){}
+
+      // If still no download, attempt to navigate to download manager page by link text
+      if (!download) {
+        try { await page.locator('text=다운로드관리, text=다운로드 관리자, text=다운로드관리자'.split(',').map(s=>s.trim()).join(' >> ')).catch(()=>{}); } catch(e){}
+      }
+
+      // If arrived at download manager, poll for 100% progress
+      try {
+        // flexible approach: reload until the page contains '100%'
+        const maxTries = 60; // up to several minutes
+        for (let i=0;i<maxTries && !download;i++) {
+          const content = await page.content();
+          if (content.indexOf('100%') !== -1 || content.indexOf('100 %') !== -1) {
+            // try to click the first downloadable filename/link
+            const link = page.locator('a:has-text(".xls"), a:has-text(".xlsx"), a:has-text("다운로드")').first();
+            if (await link.count()) {
+              const dlPromise2 = context.waitForEvent('download', { timeout: 60000 }).catch(()=>null);
+              await link.click().catch(()=>{});
+              download = await dlPromise2;
+              break;
+            }
+          }
+          await page.waitForTimeout(2000);
+          await page.reload({ waitUntil: 'networkidle' }).catch(()=>{});
+        }
+      } catch (e) { /* ignore */ }
+
     } catch (err) {
-      console.error('다운로드 링크를 찾거나 다운로드를 시작할 수 없습니다. 페이지 구조를 확인하세요.');
-      await saveDebug(page, 'download-fail');
-      process.exit(1);
+      console.error('다운로드 흐름 실행 중 오류:', err);
+      await saveDebug(page, 'download-flow-error');
     }
 
     if (!download) {
