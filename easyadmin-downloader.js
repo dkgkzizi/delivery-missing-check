@@ -57,6 +57,57 @@ async function clickIfExists(locator) {
   }
 }
 
+async function selectOptionByLabel(page, labelText, optionText) {
+  const selects = page.locator('select');
+  const count = await selects.count();
+  for (let i = 0; i < count; i++) {
+    const select = selects.nth(i);
+    const options = await select.locator('option').allTextContents();
+    const normalized = options.map(o => o.trim());
+    if (normalized.some(o => o === optionText || o.includes(optionText))) {
+      await select.selectOption({ label: optionText }).catch(() => {});
+      return true;
+    }
+    const parentText = await select.evaluate(el => el.closest('div,td,tr')?.innerText || '');
+    if (parentText.includes(labelText)) {
+      await select.selectOption({ label: optionText }).catch(() => {});
+      return true;
+    }
+  }
+  return false;
+}
+
+async function fillDateFields(page, startValue, endValue) {
+  const inputs = page.locator('input');
+  const count = await inputs.count();
+  for (let i = 0; i < count; i++) {
+    const input = inputs.nth(i);
+    const attrs = await input.evaluate(el => ({ name: el.name || '', id: el.id || '', placeholder: el.placeholder || '', ariaLabel: el.getAttribute('aria-label') || '', value: el.value || '' }));
+    const label = `${attrs.name} ${attrs.id} ${attrs.placeholder} ${attrs.ariaLabel}`;
+    if (/start|from|sdate|시작|출발/i.test(label) || /발주일/.test(label)) {
+      await input.fill(startValue).catch(() => {});
+    }
+    if (/end|to|edate|종료|마감|~|23:59/i.test(label) || /발주일/.test(label)) {
+      await input.fill(endValue).catch(() => {});
+    }
+  }
+}
+
+async function locateSearchArea(page) {
+  const area = page.locator('div:has-text("확장주문검색2"), section:has-text("확장주문검색2"), form:has-text("확장주문검색2")').first();
+  if (await area.count()) return area;
+  return page;
+}
+
+async function selectDropdownInArea(area, optionText) {
+  const dropdown = area.locator(`text=${optionText}`);
+  if (await dropdown.count()) {
+    await dropdown.first().click({ timeout: 3000 }).catch(() => {});
+    return true;
+  }
+  return false;
+}
+
 async function dismissPopups(frame) {
   const selectors = [
     'button:has-text("팝업 전체 닫기")',
@@ -209,14 +260,10 @@ async function run() {
       await page.waitForLoadState('networkidle');
       await dismissPopups(page);
 
-      // Fill period = 발주일 (try to select option)
+      // Fill period = 발주일
+      const searchArea = await locateSearchArea(page);
       try {
-        // attempt to find a select that contains the option text
-        const selects = await page.$$('select');
-        for (const s of selects) {
-          const opt = await s.$(`option:has-text("발주일")`);
-          if (opt) { await s.selectOption({ index: await (await s.$$('option')).then(opts=>opts.findIndex(o=>o === opt)) }).catch(()=>{}); break; }
-        }
+        await selectDropdownInArea(searchArea, '발주일');
       } catch (e) {}
 
       // Compute date strings: yesterday 16:00 to today 23:59
@@ -225,21 +272,12 @@ async function run() {
       const y = new Date(now.getTime() - 24*3600*1000);
       const yesterdayStr = y.toISOString().slice(0,10);
 
-      // Try to fill date inputs (various possible selectors)
-      const datePairs = [
-        ['input[name*=start]', `${yesterdayStr} 16:00`],
-        ['input[name*=end]', `${todayStr} 23:59`],
-        ['input[placeholder*=시작]', `${yesterdayStr} 16:00`],
-        ['input[placeholder*=종료]', `${todayStr} 23:59`],
-        ['input[type=date]', yesterdayStr]
-      ];
-      for (const [sel, val] of datePairs) {
-        try { const els = page.locator(sel); if (await els.count()) { await els.first().fill(val).catch(()=>{}); } } catch(e){}
-      }
+      // Fill the date/time range
+      await fillDateFields(page, `${yesterdayStr} 16:00`, `${todayStr} 23:59`);
 
-      // Set 상태 = 송장, C/S = 정상+교환 if possible
-      try { await page.locator('text=상태').first().click().catch(()=>{}); await page.locator('text=송장').first().click().catch(()=>{}); } catch (e) {}
-      try { await page.locator('text=C/S').first().click().catch(()=>{}); await page.locator('text=정상+교환').first().click().catch(()=>{}); } catch (e) {}
+      // Set 상태 = 송장 and C/S = 정상+교환
+      try { await selectDropdownInArea(searchArea, '송장'); } catch (e) {}
+      try { await selectDropdownInArea(searchArea, '정상+교환'); } catch (e) {}
 
       // Click 검색
       try { await page.locator('button:has-text("검색"), input:has-text("검색")').first().click({ timeout: 5000 }); } catch (e) {}
