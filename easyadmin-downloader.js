@@ -80,15 +80,40 @@ async function selectOptionByLabel(page, labelText, optionText) {
 async function fillDateFields(page, startValue, endValue) {
   const inputs = page.locator('input');
   const count = await inputs.count();
+  let startFilled = false;
+  let endFilled = false;
+
   for (let i = 0; i < count; i++) {
     const input = inputs.nth(i);
-    const attrs = await input.evaluate(el => ({ name: el.name || '', id: el.id || '', placeholder: el.placeholder || '', ariaLabel: el.getAttribute('aria-label') || '', value: el.value || '' }));
+    const attrs = await input.evaluate(el => ({ name: el.name || '', id: el.id || '', placeholder: el.placeholder || '', ariaLabel: el.getAttribute('aria-label') || '' }));
     const label = `${attrs.name} ${attrs.id} ${attrs.placeholder} ${attrs.ariaLabel}`;
-    if (/start|from|sdate|시작|출발/i.test(label) || /발주일/.test(label)) {
+
+    if (!startFilled && /(?:start|from|sdate|시작|출발)/i.test(label)) {
       await input.fill(startValue).catch(() => {});
+      startFilled = true;
+      continue;
     }
-    if (/end|to|edate|종료|마감|~|23:59/i.test(label) || /발주일/.test(label)) {
+
+    if (!endFilled && /(?:end|to|edate|종료|마감|~|23:59)/i.test(label)) {
       await input.fill(endValue).catch(() => {});
+      endFilled = true;
+      continue;
+    }
+  }
+
+  if (!startFilled) {
+    const startInput = page.locator('input[name*=start], input[id*=start], input[placeholder*=시작]');
+    if (await startInput.count()) {
+      await startInput.first().fill(startValue).catch(() => {});
+      startFilled = true;
+    }
+  }
+
+  if (!endFilled) {
+    const endInput = page.locator('input[name*=end], input[id*=end], input[placeholder*=종료]');
+    if (await endInput.count()) {
+      await endInput.first().fill(endValue).catch(() => {});
+      endFilled = true;
     }
   }
 }
