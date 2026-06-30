@@ -259,6 +259,22 @@
     .summary-meta strong {
       color: #2563eb;
     }
+    .row-remove {
+      appearance: none;
+      border: 1px solid rgba(148,163,184,0.35);
+      border-radius: 14px;
+      padding: 10px 14px;
+      background: #ffffff;
+      color: #dc2626;
+      font-size: 0.92rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.2s ease, background 0.2s ease;
+    }
+    .row-remove:hover {
+      transform: translateY(-1px);
+      background: #fef2f2;
+    }
     .table-wrap {
       overflow-x: auto;
       border-radius: 28px;
@@ -340,7 +356,6 @@
 
         <div class="action-row">
           <button id="runButton" class="btn-primary">필터 실행</button>
-          <a id="downloadLink" class="download-link hidden" download="filtered_delivery_missing.csv">CSV 다운로드</a>
         </div>
       </div>
       <p class="help-text">웹에서 직접 파일을 분석하고 필터링합니다. 서버 업로드 없이 브라우저에서 바로 처리됩니다.</p>
@@ -376,6 +391,7 @@
     const skipNegativeInput = document.getElementById('skipNegative');
 
     const headers = ['주문번호','상품명','옵션명','상품수량','가용재고','송장번호','배송일'];
+    let activeRows = [];
 
     fileInput.addEventListener('change', () => {
       fileLabel.textContent = fileInput.files?.[0]?.name || '선택된 파일 없음';
@@ -383,27 +399,41 @@
 
     function createCSV(rows) {
       const escapeValue = v => '"' + String(v || '').replace(/"/g, '""') + '"';
-      return [headers.map(escapeValue).join(',')].concat(rows.map(row => headers.map(field => escapeValue(row[field])).join(','))).join('\n');
+      const bom = '\uFEFF';
+      const lines = [headers.map(escapeValue).join(',')].concat(rows.map(row => headers.map(field => escapeValue(row[field])).join(',')));
+      return bom + lines.join('\r\n');
     }
 
     function renderSummary(rows) {
-      if (!rows.length) {
+      activeRows = rows.slice();
+      if (!activeRows.length) {
         summaryText.textContent = '조건에 맞는 결과가 없습니다.';
         tableContainer.innerHTML = '';
         downloadLink.classList.add('hidden');
         document.getElementById('resultCount').textContent = '0';
         return;
       }
-      summaryText.textContent = `총 ${rows.length}개 행이 필터링되었습니다. 아래는 최대 50개 결과입니다.`;
-      const sliced = rows.slice(0, 50);
-      const th = headers.map(h => `<th>${h}</th>`).join('');
-      const tr = sliced.map(row => '<tr>' + headers.map(field => `<td>${String(row[field] || '')}</td>`).join('') + '</tr>').join('');
+      summaryText.textContent = `총 ${activeRows.length}개 행이 필터링되었습니다. 아래는 최대 50개 결과입니다.`;
+      const sliced = activeRows.slice(0, 50);
+      const th = '<th>삭제</th>' + headers.map(h => `<th>${h}</th>`).join('');
+      const tr = sliced.map((row, index) => {
+        const rowIndex = index;
+        const cells = headers.map(field => `<td>${String(row[field] || '')}</td>`).join('');
+        return `<tr><td><button type="button" class="row-remove" data-row-index="${rowIndex}">삭제</button></td>${cells}</tr>`;
+      }).join('');
       tableContainer.innerHTML = `<table><thead><tr>${th}</tr></thead><tbody>${tr}</tbody></table>`;
-      const csv = createCSV(rows);
+      tableContainer.querySelectorAll('.row-remove').forEach(button => {
+        button.addEventListener('click', () => {
+          const removeIndex = Number(button.dataset.rowIndex);
+          activeRows.splice(removeIndex, 1);
+          renderSummary(activeRows);
+        });
+      });
+      const csv = createCSV(activeRows);
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
       downloadLink.href = URL.createObjectURL(blob);
       downloadLink.classList.remove('hidden');
-      document.getElementById('resultCount').textContent = rows.length;
+      document.getElementById('resultCount').textContent = activeRows.length;
     }
 
     function filterRows(rows) {
