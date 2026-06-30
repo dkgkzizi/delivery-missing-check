@@ -108,20 +108,34 @@ async function selectDropdownInArea(area, optionText) {
   return false;
 }
 
-async function clickMenuItem(page, label, areaSelector) {
-  const area = areaSelector ? page.locator(areaSelector).first() : page;
-  const locator = area.locator(`xpath=.//a[normalize-space(text())="${label}"] | .//button[normalize-space(text())="${label}"] | .//span[normalize-space(text())="${label}"]`);
-  if (await locator.count()) {
+async function clickExactLabel(area, label) {
+  const locator = area.locator(`xpath=.//a[normalize-space(text())="${label}"] | .//button[normalize-space(text())="${label}"] | .//span[normalize-space(text())="${label}"] | .//div[normalize-space(text())="${label}"]`);
+  const count = await locator.count();
+  if (count) {
+    console.log(`clickExactLabel: found ${count} matches for '${label}' in area`);
     await locator.first().click({ timeout: 5000 }).catch(() => {});
     return true;
   }
-  if (!areaSelector) {
-    const fallback = page.locator(`text=${label}`);
-    if (await fallback.count()) {
-      await fallback.first().click({ timeout: 5000 }).catch(() => {});
-      return true;
-    }
+  return false;
+}
+
+async function clickTopMenu(page, label) {
+  const topArea = page.locator('header, nav, .gnb, .top-menu, .topNav, .header-nav').first();
+  if (await topArea.count() && await clickExactLabel(topArea, label)) return true;
+  const pageArea = page.locator(`xpath=//a[normalize-space(text())="${label}"] | //button[normalize-space(text())="${label}"] | //span[normalize-space(text())="${label}"]`).first();
+  if (await pageArea.count()) {
+    console.log(`clickTopMenu: fallback found '${label}' in entire page`);
+    await pageArea.click({ timeout: 5000 }).catch(() => {});
+    return true;
   }
+  console.warn(`clickTopMenu: failed to find '${label}'`);
+  return false;
+}
+
+async function clickSideMenu(page, label) {
+  const sideArea = page.locator('aside, .sidebar, .left-menu, .side-menu, .gnb, .navigation').first();
+  if (await sideArea.count() && await clickExactLabel(sideArea, label)) return true;
+  console.warn(`clickSideMenu: failed to find '${label}' in side menu`);
   return false;
 }
 
@@ -288,7 +302,7 @@ async function run() {
 
       // Click top menu '주문배송관리'
       await dismissPopups(page);
-      await clickMenuItem(page, '주문배송관리', 'header, nav, [role=navigation], .top-menu, .gnb');
+      await clickTopMenu(page, '주문배송관리');
       await page.waitForTimeout(1200);
       await dismissPopups(page);
       await page.waitForTimeout(600);
@@ -297,7 +311,7 @@ async function run() {
       await clickIfExists(page.locator('button:has-text("팝업 닫기"), a:has-text("팝업 닫기"), *:has-text("팝업 닫기")'));
       await dismissPopups(page);
       // Click left side menu '확장주문검색2'
-      await clickMenuItem(page, '확장주문검색2', '.sidebar, aside, .side-menu, .left-menu, [role=navigation]');
+      await clickSideMenu(page, '확장주문검색2');
       await page.waitForLoadState('networkidle');
       await dismissPopups(page);
       await page.waitForTimeout(800);
