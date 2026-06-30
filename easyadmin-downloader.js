@@ -281,6 +281,7 @@ async function run() {
       await new Promise(resolve => process.stdin.once('data', () => resolve()));
       process.stdin.pause();
       console.log('Continuing after manual confirmation...');
+      await saveDebug(page, 'manual-confirmation');
     }
 
     const downloadFile = path.resolve(DOWNLOAD_DIR, DOWNLOAD_FILENAME);
@@ -394,6 +395,7 @@ async function run() {
     } catch (err) {
       console.error('다운로드 흐름 실행 중 오류:', err);
       await saveDebug(page, 'download-flow-error');
+      throw err;
     }
 
     if (!download) {
