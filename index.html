@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>배송 누락 체크</title>
+  <title>배송 체크</title>
   <style>
     :root {
       color-scheme: light;
@@ -126,10 +126,14 @@
       cursor: pointer;
       transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
     }
-    .file-select:hover {
+    .file-select:hover,
+    .file-select.drag-over {
       transform: translateY(-1px);
       border-color: #3b82f6;
       box-shadow: 0 16px 28px rgba(59,130,246,0.14);
+    }
+    .file-select.drag-over {
+      background: linear-gradient(180deg, #e0f2fe 0%, #eff6ff 100%);
     }
     .file-select span {
       min-width: 0;
@@ -321,9 +325,9 @@
   <div class="page">
     <header>
       <div class="title-group">
-        <span class="badge">배송 체크 도구</span>
-        <h1>배송 누락 / 미스캔 체크</h1>
-        <p class="description">EasyAdmin 엑셀을 업로드하면 지정한 판매처와 옵션을 제외하고, 음수 재고를 필터링한 결과를 즉시 볼 수 있습니다.</p>
+        <span class="badge">배송 점검</span>
+        <h1>배송 누락 확인</h1>
+        <p class="description">엑셀 파일을 업로드하면 빠르게 배송 누락 데이터를 확인하고 CSV로 저장할 수 있습니다.</p>
       </div>
     </header>
 
@@ -331,8 +335,8 @@
       <div class="panel-grid">
         <div class="file-box">
           <label for="fileInput">EasyAdmin 엑셀 파일</label>
-          <label for="fileInput" class="file-select">
-            <span>파일 선택</span>
+          <label for="fileInput" class="file-select" id="dropZone">
+            <span>파일 선택 또는 여기에 드래그</span>
             <span id="fileLabel">선택된 파일 없음</span>
           </label>
           <input type="file" id="fileInput" accept=".xls,.xlsx" />
@@ -355,7 +359,7 @@
         </div>
 
         <div class="action-row">
-          <button id="runButton" class="btn-primary">필터 실행</button>
+          <button id="runButton" class="btn-primary">확인</button>
         </div>
       </div>
       <p class="help-text">웹에서 직접 파일을 분석하고 필터링합니다. 서버 업로드 없이 브라우저에서 바로 처리됩니다.</p>
@@ -364,12 +368,12 @@
     <section class="panel summary-card">
       <div class="summary-inner">
         <div class="summary-heading">
-          <p class="summary-label">결과 요약</p>
-          <a id="downloadLink" class="download-link hidden" download="filtered_delivery_missing.csv">CSV 다운로드</a>
+          <p class="summary-label">결과</p>
+          <a id="downloadLink" class="download-link hidden" download="filtered_delivery_missing.csv">CSV 저장</a>
         </div>
         <div class="summary-meta">
-          <p id="summaryText" class="summary-text">엑셀 파일을 업로드하고 필터 실행 버튼을 눌러 주세요.</p>
-          <p class="summary-text">총 <strong id="resultCount">0</strong>개 행이 필터링되었습니다.</p>
+          <p id="summaryText" class="summary-text">파일을 업로드하면 결과를 보여줍니다.</p>
+          <p class="summary-text">총 <strong id="resultCount">0</strong>개 행</p>
         </div>
       </div>
       <div class="table-wrap">
@@ -382,6 +386,7 @@
   <script>
     const fileInput = document.getElementById('fileInput');
     const fileLabel = document.getElementById('fileLabel');
+    const dropZone = document.getElementById('dropZone');
     const runButton = document.getElementById('runButton');
     const summaryText = document.getElementById('summaryText');
     const tableContainer = document.getElementById('tableContainer');
@@ -395,6 +400,28 @@
 
     fileInput.addEventListener('change', () => {
       fileLabel.textContent = fileInput.files?.[0]?.name || '선택된 파일 없음';
+    });
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropZone.addEventListener(eventName, event => {
+        event.preventDefault();
+        dropZone.classList.add('drag-over');
+      });
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropZone.addEventListener(eventName, event => {
+        event.preventDefault();
+        dropZone.classList.remove('drag-over');
+      });
+    });
+
+    dropZone.addEventListener('drop', event => {
+      event.preventDefault();
+      const file = event.dataTransfer.files?.[0];
+      if (!file) return;
+      fileInput.files = event.dataTransfer.files;
+      fileLabel.textContent = file.name;
     });
 
     function createCSV(rows) {
