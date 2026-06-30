@@ -7,7 +7,25 @@
 ```powershell
 cd "c:\Users\ozkiz\OneDrive\바탕 화면\클로드 코드\배송 마감"
 npm install
+npx playwright install
 ```
+
+## 자동 다운로드 + 필터 실행
+
+환경 변수를 설정하고 실행하면 EasyAdmin 로그인부터 엑셀 다운로드, 필터 처리까지 자동화합니다.
+
+```powershell
+$env:EASYADMIN_DOMAIN = 'dammom'
+$env:EASYADMIN_USER = '김대성'
+$env:EASYADMIN_PASS = '!asrornf14'
+$env:EASYADMIN_DOWNLOAD_URL = 'https://login2.ezadmin.co.kr/your-download-page'
+$env:DOWNLOAD_DIR = 'C:\Users\ozkiz\OneDrive\바탕 화면\클로드 코드\배송 마감\downloads'
+npm run download
+```
+
+- `EASYADMIN_DOWNLOAD_URL`는 로그인 후 엑셀 다운로드 버튼이 있는 페이지 URL입니다.
+- 다운로드 파일은 `downloads` 폴더에 저장됩니다.
+- 필터 결과는 `filtered_<filename>.xlsx`로 생성됩니다.
 
 ## 사용법
 

@@ -6,9 +6,13 @@
   "scripts": {
     "check": "node delivery-missing-check.js",
     "start": "npx serve .",
-    "build": "echo 'No build step required for static site'"
+    "build": "echo 'No build step required for static site'",
+    "download": "node easyadmin-downloader.js"
   },
   "dependencies": {
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "playwright": "^1.45.0"
   }
 }
