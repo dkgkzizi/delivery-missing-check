@@ -96,7 +96,10 @@ async function dismissPopups(frame) {
     await clickIfExists(locator);
   }
 
-  for (const child of frame.childFrames()) {
+  const childFrames = typeof frame.childFrames === 'function' ? frame.childFrames() :
+    (typeof frame.frames === 'function' ? frame.frames() : []);
+
+  for (const child of childFrames) {
     await dismissPopups(child);
   }
 }
