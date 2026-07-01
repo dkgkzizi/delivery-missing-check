@@ -256,6 +256,8 @@ async function dismissPopups(frame) {
   }
 }
 
+let allowPopup = false;
+
 async function handleDownloadPopups(page) {
   // Handles the multi-step download confirmation flow shown by the site.
   // Sequence: click download popup buttons, confirm the text dialog, then move to the download manager.
@@ -301,11 +303,15 @@ async function handleDownloadPopups(page) {
       if (await downloadComplete.count() && await downloadComplete.isVisible()) {
         const goBtn = page.locator('#btn_download_complete1').first();
         if (await goBtn.count() && await goBtn.isVisible()) {
-          await Promise.all([
-            page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => null),
-            goBtn.click().catch(() => {})
-          ]);
-          return;
+          const popupPromise = page.waitForEvent('popup', { timeout: 10000 }).catch(() => null);
+          await goBtn.click().catch(() => {});
+          const popup = await popupPromise;
+          if (popup) {
+            await popup.waitForLoadState('domcontentloaded').catch(() => {});
+            return popup;
+          }
+          await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => null);
+          return page;
         }
       }
 
