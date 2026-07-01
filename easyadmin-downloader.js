@@ -261,50 +261,61 @@ let allowPopup = false;
 async function handleDownloadPopups(page) {
   // Handles the multi-step download confirmation flow shown by the site.
   // Sequence: click download popup buttons, confirm the text dialog, then move to the download manager.
-  for (let attempt = 0; attempt < 16; attempt++) {
+  for (let attempt = 0; attempt < 18; attempt++) {
     try {
+      console.log('handleDownloadPopups attempt', attempt + 1);
+
       // 1) If the download info popup is visible, click the apply/download request button.
       const downloadInfo = page.locator('#pop_download_info').first();
-      if (await downloadInfo.count() && await downloadInfo.isVisible()) {
-        const applyBtn = page.locator('#btn_download_info1').first();
-        if (await applyBtn.count() && await applyBtn.isVisible()) {
-          await applyBtn.click({ timeout: 3000 }).catch(() => {});
-          await page.waitForTimeout(500);
+      const downloadInfoCount = await downloadInfo.count();
+      if (downloadInfoCount) {
+        console.log('downloadInfo count:', downloadInfoCount, 'visible:', await downloadInfo.isVisible());
+        const applyBtn = page.locator('#btn_download_info1, button:has-text("다운로드 신청"), a:has-text("다운로드 신청"), *:has-text("다운로드 신청")').first();
+        if (await applyBtn.count()) {
+          console.log('clicking download apply button');
+          await applyBtn.click({ timeout: 3000, force: true }).catch(() => {});
+          await page.waitForTimeout(600);
           continue;
         }
       }
 
       // 2) If the SweetAlert confirmation popup is visible, fill the input and click confirm.
       const swalInput = page.locator('.swal2-container .swal2-input, .swal2-input').first();
-      if (await swalInput.count() && await swalInput.isVisible()) {
+      if (await swalInput.count()) {
+        console.log('swal input visible:', await swalInput.isVisible());
         await swalInput.fill('확인했습니다').catch(() => {});
-        await page.waitForTimeout(200);
+        await page.waitForTimeout(300);
         const swalConfirm = page.locator('.swal2-container .swal2-confirm, .swal2-confirm').first();
-        if (await swalConfirm.count() && await swalConfirm.isVisible()) {
-          await swalConfirm.click({ timeout: 3000 }).catch(() => {});
-          await page.waitForTimeout(500);
+        if (await swalConfirm.count()) {
+          console.log('clicking swal confirm');
+          await swalConfirm.click({ timeout: 3000, force: true }).catch(() => {});
+          await page.waitForTimeout(600);
           continue;
         }
       }
 
       // 3) If the personal information confirmation popup exists, click its confirm button.
       const personalPopup = page.locator('#pop_personal_information').first();
-      if (await personalPopup.count() && await personalPopup.isVisible()) {
+      if (await personalPopup.count()) {
+        console.log('personalPopup visible:', await personalPopup.isVisible());
         const personalConfirm = personalPopup.locator('.btn_cnf').first();
-        if (await personalConfirm.count() && await personalConfirm.isVisible()) {
-          await personalConfirm.click({ timeout: 3000 }).catch(() => {});
-          await page.waitForTimeout(500);
+        if (await personalConfirm.count()) {
+          console.log('clicking personal confirm');
+          await personalConfirm.click({ timeout: 3000, force: true }).catch(() => {});
+          await page.waitForTimeout(600);
           continue;
         }
       }
 
       // 4) If the final download complete popup is visible, click the manager navigation button.
       const downloadComplete = page.locator('#pop_download_complete').first();
-      if (await downloadComplete.count() && await downloadComplete.isVisible()) {
+      if (await downloadComplete.count()) {
+        console.log('downloadComplete visible:', await downloadComplete.isVisible());
         const goBtn = page.locator('#btn_download_complete1').first();
-        if (await goBtn.count() && await goBtn.isVisible()) {
+        if (await goBtn.count()) {
+          console.log('clicking final go button');
           const popupPromise = page.waitForEvent('popup', { timeout: 10000 }).catch(() => null);
-          await goBtn.click().catch(() => {});
+          await goBtn.click({ timeout: 3000, force: true }).catch(() => {});
           const popup = await popupPromise;
           if (popup) {
             await popup.waitForLoadState('domcontentloaded').catch(() => {});
@@ -316,15 +327,17 @@ async function handleDownloadPopups(page) {
       }
 
       // 5) If the popup exists but not yet actionable, wait briefly.
-      if ((await downloadInfo.count() && await downloadInfo.isVisible()) || (await personalPopup.count() && await personalPopup.isVisible()) || (await swalInput.count() && await swalInput.isVisible())) {
-        await page.waitForTimeout(300);
+      if (downloadInfoCount || (await personalPopup.count()) || (await swalInput.count())) {
+        console.log('popup exists but not actionable yet');
+        await page.waitForTimeout(400);
         continue;
       }
     } catch (e) {
-      // ignore transient errors and retry
+      console.error('handleDownloadPopups error', e);
     }
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(500);
   }
+  console.warn('handleDownloadPopups timed out without completing the sequence');
 }
 
 async function run() {
