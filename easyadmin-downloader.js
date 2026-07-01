@@ -280,17 +280,25 @@ async function handleDownloadPopups(page) {
       }
 
       // 2) If the SweetAlert confirmation popup is visible, fill the input and click confirm.
-      const swalInput = page.locator('.swal2-container .swal2-input, .swal2-input').first();
+      const swalInput = page.locator('.swal2-container .swal2-input:visible, .swal2-input:visible').first();
       if (await swalInput.count()) {
         console.log('swal input visible:', await swalInput.isVisible());
         await swalInput.fill('확인했습니다').catch(() => {});
         await page.waitForTimeout(300);
-        const swalConfirm = page.locator('.swal2-container .swal2-confirm, .swal2-confirm').first();
+        const swalConfirm = page.locator('.swal2-container .swal2-confirm:visible, .swal2-confirm:visible').first();
         if (await swalConfirm.count()) {
           console.log('clicking swal confirm');
           await swalConfirm.click({ timeout: 3000, force: true }).catch(() => {});
           await page.waitForTimeout(600);
           continue;
+        }
+        // fallback: try pressing Enter in the visible input
+        try {
+          await swalInput.press('Enter');
+          await page.waitForTimeout(600);
+          continue;
+        } catch (e) {
+          console.log('swal enter fallback failed', e);
         }
       }
 
