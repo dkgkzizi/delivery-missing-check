@@ -258,47 +258,48 @@ async function dismissPopups(frame) {
 
 async function handleDownloadPopups(page) {
   // Handles the multi-step download confirmation flow shown by the site.
-  // Sequence: click '다운로드 신청' -> handle '확인' modals -> fill '확인했습니다' when requested -> click '바로가기'.
-  for (let attempt = 0; attempt < 12; attempt++) {
+  // Sequence: click download popup buttons, confirm the text dialog, then move to the download manager.
+  for (let attempt = 0; attempt < 16; attempt++) {
     try {
-      // 1) Click '다운로드 신청' if present
-      const applyBtn = page.locator('button:has-text("다운로드 신청"), a:has-text("다운로드 신청")').first();
-      if (await applyBtn.count() && await applyBtn.isVisible()) {
-        await applyBtn.click({ timeout: 3000 }).catch(() => {});
-        await page.waitForTimeout(500);
-        continue;
-      }
-
-      // 2) Look for modal/dialog container
-      const modal = page.locator('div[role="dialog"], .modal, .layer-popup, .popup, .ui-dialog').first();
-      if (await modal.count() && await modal.isVisible()) {
-        const modalText = (await modal.innerText()).trim();
-
-        // If modal asks to type '확인했습니다', fill the input and confirm
-        if (modalText.indexOf('확인했습니다') !== -1) {
-          const input = modal.locator('input[type=text], input').first();
-          if (await input.count() && await input.isVisible()) {
-            await input.fill('확인했습니다').catch(() => {});
-            await page.waitForTimeout(150);
-            const confirmBtn = modal.locator('button:has-text("확인"), a:has-text("확인")').first();
-            if (await confirmBtn.count() && await confirmBtn.isVisible()) {
-              await confirmBtn.click().catch(() => {});
-              await page.waitForTimeout(500);
-              continue;
-            }
-          }
-        }
-
-        // Otherwise, if modal has a '확인' button (e.g., 개인정보 안내), click it
-        const okBtn = modal.locator('button:has-text("확인"), a:has-text("확인")').first();
-        if (await okBtn.count() && await okBtn.isVisible()) {
-          await okBtn.click().catch(() => {});
-          await page.waitForTimeout(400);
+      // 1) If the download info popup is visible, click the apply/download request button.
+      const downloadInfo = page.locator('#pop_download_info').first();
+      if (await downloadInfo.count() && await downloadInfo.isVisible()) {
+        const applyBtn = page.locator('#btn_download_info1').first();
+        if (await applyBtn.count() && await applyBtn.isVisible()) {
+          await applyBtn.click({ timeout: 3000 }).catch(() => {});
+          await page.waitForTimeout(500);
           continue;
         }
+      }
 
-        // If modal has '바로가기', click it and wait for navigation
-        const goBtn = modal.locator('button:has-text("바로가기"), a:has-text("바로가기")').first();
+      // 2) If the SweetAlert confirmation popup is visible, fill the input and click confirm.
+      const swalInput = page.locator('.swal2-container .swal2-input, .swal2-input').first();
+      if (await swalInput.count() && await swalInput.isVisible()) {
+        await swalInput.fill('확인했습니다').catch(() => {});
+        await page.waitForTimeout(200);
+        const swalConfirm = page.locator('.swal2-container .swal2-confirm, .swal2-confirm').first();
+        if (await swalConfirm.count() && await swalConfirm.isVisible()) {
+          await swalConfirm.click({ timeout: 3000 }).catch(() => {});
+          await page.waitForTimeout(500);
+          continue;
+        }
+      }
+
+      // 3) If the personal information confirmation popup exists, click its confirm button.
+      const personalPopup = page.locator('#pop_personal_information').first();
+      if (await personalPopup.count() && await personalPopup.isVisible()) {
+        const personalConfirm = personalPopup.locator('.btn_cnf').first();
+        if (await personalConfirm.count() && await personalConfirm.isVisible()) {
+          await personalConfirm.click({ timeout: 3000 }).catch(() => {});
+          await page.waitForTimeout(500);
+          continue;
+        }
+      }
+
+      // 4) If the final download complete popup is visible, click the manager navigation button.
+      const downloadComplete = page.locator('#pop_download_complete').first();
+      if (await downloadComplete.count() && await downloadComplete.isVisible()) {
+        const goBtn = page.locator('#btn_download_complete1').first();
         if (await goBtn.count() && await goBtn.isVisible()) {
           await Promise.all([
             page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => null),
@@ -308,24 +309,11 @@ async function handleDownloadPopups(page) {
         }
       }
 
-      // 3) Global '바로가기' (outside modal)
-      const globalGo = page.locator('button:has-text("바로가기"), a:has-text("바로가기")').first();
-      if (await globalGo.count() && await globalGo.isVisible()) {
-        await Promise.all([
-          page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => null),
-          globalGo.click().catch(() => {})
-        ]);
-        return;
-      }
-
-      // 4) If nothing actionable yet, try to click any '닫기' or small '확인' buttons to clear overlays conservatively
-      const extra = page.locator('button:has-text("닫기"), a:has-text("닫기")').first();
-      if (await extra.count() && await extra.isVisible()) {
-        await extra.click().catch(() => {});
+      // 5) If the popup exists but not yet actionable, wait briefly.
+      if ((await downloadInfo.count() && await downloadInfo.isVisible()) || (await personalPopup.count() && await personalPopup.isVisible()) || (await swalInput.count() && await swalInput.isVisible())) {
         await page.waitForTimeout(300);
         continue;
       }
-
     } catch (e) {
       // ignore transient errors and retry
     }
@@ -547,69 +535,8 @@ async function run() {
       } catch (e) {}
       await page.waitForTimeout(800);
 
-      // Handle the expected download popups in sequence:
-      // 1) Click '다운로드 신청'
-      // 2) Click '확인'
-      // 3) Fill '확인했습니다' into the confirmation input and click 확인
-      // 4) Click '바로가기' to go to 다운로드관리자
-      try {
-        // Prefer handling SweetAlert (Swal.fire) modals explicitly to avoid clicking other '확인' buttons.
-        // Wait briefly for any modal to appear
-        const swalPopup = page.locator('.swal2-container .swal2-popup, .swal2-popup');
-        const genericModal = page.locator('.modal, .layer, .ui-dialog');
-
-        // If there's an inline '다운로드 신청' button (non-swal) click it first
-        const applyBtn = page.locator('button:has-text("다운로드 신청"), a:has-text("다운로드 신청")').filter({ hasText: '다운로드 신청' }).first();
-        if (await applyBtn.count()) {
-          await applyBtn.click({ timeout: 1200 }).catch(() => {});
-          await page.waitForTimeout(500);
-        }
-
-        // Wait for Swal popup with input
-        if (await swalPopup.count()) {
-          try {
-            await swalPopup.first().waitFor({ state: 'visible', timeout: 2000 });
-            // fill the swal input if present
-            const swalInput = page.locator('.swal2-container .swal2-input, .swal2-input').first();
-            if (await swalInput.count()) {
-              await swalInput.fill('확인했습니다').catch(() => {});
-              await page.waitForTimeout(200);
-            }
-            // click swal confirm inside the popup
-            const swalConfirm = page.locator('.swal2-container .swal2-confirm, .swal2-confirm').first();
-            if (await swalConfirm.count()) {
-              await swalConfirm.click({ timeout: 1200 }).catch(() => {});
-            }
-            await page.waitForTimeout(500);
-          } catch (e) {}
-        } else if (await genericModal.count()) {
-          // fallback: try to scope to visible modal and input
-          try {
-            const visModal = genericModal.filter({ has: page.locator('input, button:has-text("확인")') }).first();
-            if (await visModal.count()) {
-              const textInput = visModal.locator('input[type=text], input').first();
-              if (await textInput.count()) {
-                await textInput.fill('확인했습니다').catch(() => {});
-                await page.waitForTimeout(200);
-              }
-              const okBtn = visModal.locator('button:has-text("확인"), a:has-text("확인")').first();
-              if (await okBtn.count()) await okBtn.click({ timeout: 1200 }).catch(() => {});
-            }
-          } catch (e) {}
-        }
-
-        // After confirming the input dialog, click '바로가기' inside any visible modal or on page
-        try {
-          const gotoBtn = page.locator('button:has-text("바로가기"), a:has-text("바로가기")').filter({ hasText: '바로가기' }).first();
-          if (await gotoBtn.count()) {
-            await gotoBtn.click({ timeout: 1200 }).catch(() => {});
-            await page.waitForTimeout(600);
-          }
-        } catch (e) {}
-
-      } catch (e) {
-        await dismissPopups(page).catch(() => {});
-      }
+      // Handle the expected download popups in sequence.
+      await handleDownloadPopups(page);
 
       // Click download button
       try {
