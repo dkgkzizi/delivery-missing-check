@@ -394,19 +394,60 @@ async function run() {
       const y = new Date(now.getTime() - 24*3600*1000);
       const yesterdayStr = y.toISOString().slice(0,10);
 
-      // Fill only the start date (작업일 기준 전날 16:00). Leave end date alone.
+      // Fill only the start date (작업일 기준 전날) via calendar, then select hour '16' separately.
       try {
-        const startValue = `${yesterdayStr} 16:00`;
-        // attempt to fill an input that looks like start date inside the search area
-        const startInput = searchArea.locator('input[name*=start], input[id*=start], input[placeholder*=시작], input[placeholder*=발주]');
-        if (await startInput.count()) {
-          await startInput.first().fill(startValue).catch(() => {});
-        } else {
-          // generic fallback: find inputs and fill the first empty one
-          const inputs = searchArea.locator('input');
-          if (await inputs.count()) {
-            await inputs.first().fill(startValue).catch(() => {});
+        const startDateStr = yesterdayStr; // YYYY-MM-DD
+        const dayOfMonth = String(y.getDate());
+
+        const startInputLocator = searchArea.locator('input[name*=start], input[id*=start], input[placeholder*=시작], input[placeholder*=발주]').first();
+        if (await startInputLocator.count()) {
+          // open datepicker by clicking the input
+          await startInputLocator.click({ force: true }).catch(() => {});
+
+          // wait shortly for jQuery UI datepicker element
+          const dp = page.locator('#ui-datepicker-div');
+          try { await dp.waitFor({ state: 'visible', timeout: 1500 }); } catch(e) {}
+
+          // try to click the day cell in the datepicker
+          let clicked = false;
+          try {
+            const dayLocator = dp.locator(`xpath=.//a[normalize-space(text())='${dayOfMonth}']`).first();
+            if (await dayLocator.count()) {
+              await dayLocator.click({ timeout: 1200 }).catch(() => {});
+              clicked = true;
+            }
+          } catch (e) {}
+
+          // fallback: if calendar didn't work, fill date-only string into input
+          if (!clicked) {
+            try {
+              await startInputLocator.fill(startDateStr).catch(() => {});
+              await startInputLocator.evaluate(el => el.dispatchEvent(new Event('change'))).catch(() => {});
+            } catch (e) {}
           }
+
+          // Now select hour '16' from nearby select element (search area scoped)
+          try {
+            const selects = searchArea.locator('select');
+            const scnt = await selects.count();
+            for (let si = 0; si < scnt; si++) {
+              const s = selects.nth(si);
+              const opts = await s.locator('option').allTextContents();
+              const norm = opts.map(o => o.trim());
+              if (norm.includes('16') || norm.includes('16:00') || norm.includes('16시') ) {
+                try { await s.selectOption({ label: '16' }).catch(() => {}); } catch(e) {}
+                try { await s.selectOption({ value: '16' }).catch(() => {}); } catch(e) {}
+                // dispatch change on select via evaluate to ensure any listeners run
+                try { await s.evaluate(el => el.dispatchEvent(new Event('change'))).catch(() => {}); } catch(e) {}
+                break;
+              }
+            }
+          } catch (e) {}
+
+        } else {
+          // generic fallback: fill first input
+          const inputs = searchArea.locator('input');
+          if (await inputs.count()) await inputs.first().fill(startDateStr).catch(() => {});
         }
       } catch (e) {}
       await closeDatePicker(page);
@@ -415,12 +456,21 @@ async function run() {
       try { await selectOptionInAreaByLabel(searchArea, '상태', '송장'); } catch (e) {}
       try { await selectOptionInAreaByLabel(searchArea, 'C/S', '정상+교환'); } catch (e) {}
 
-      // Click 검색
-      try { await page.locator('button:has-text("검색"), input:has-text("검색")').first().click({ timeout: 5000 }); } catch (e) {}
+      // Trigger search via F2 to avoid clicking wrong elements, wait for results, then trigger download via F6.
+      try {
+        await page.keyboard.press('F2').catch(() => {});
+      } catch (e) {}
+      // Wait for the page to settle after search
       await page.waitForLoadState('networkidle');
       await page.waitForTimeout(1000);
 
-      // Dismiss any popups now
+      // After search completes, trigger the download hotkey F6 (site shortcut).
+      try {
+        await page.keyboard.press('F6').catch(() => {});
+      } catch (e) {}
+      await page.waitForTimeout(800);
+
+      // Dismiss any popups that appear after triggering download
       await dismissPopups(page);
 
       // Click download button
