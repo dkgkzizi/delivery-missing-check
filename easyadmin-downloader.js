@@ -256,6 +256,83 @@ async function dismissPopups(frame) {
   }
 }
 
+async function handleDownloadPopups(page) {
+  // Handles the multi-step download confirmation flow shown by the site.
+  // Sequence: click '다운로드 신청' -> handle '확인' modals -> fill '확인했습니다' when requested -> click '바로가기'.
+  for (let attempt = 0; attempt < 12; attempt++) {
+    try {
+      // 1) Click '다운로드 신청' if present
+      const applyBtn = page.locator('button:has-text("다운로드 신청"), a:has-text("다운로드 신청")').first();
+      if (await applyBtn.count() && await applyBtn.isVisible()) {
+        await applyBtn.click({ timeout: 3000 }).catch(() => {});
+        await page.waitForTimeout(500);
+        continue;
+      }
+
+      // 2) Look for modal/dialog container
+      const modal = page.locator('div[role="dialog"], .modal, .layer-popup, .popup, .ui-dialog').first();
+      if (await modal.count() && await modal.isVisible()) {
+        const modalText = (await modal.innerText()).trim();
+
+        // If modal asks to type '확인했습니다', fill the input and confirm
+        if (modalText.indexOf('확인했습니다') !== -1) {
+          const input = modal.locator('input[type=text], input').first();
+          if (await input.count() && await input.isVisible()) {
+            await input.fill('확인했습니다').catch(() => {});
+            await page.waitForTimeout(150);
+            const confirmBtn = modal.locator('button:has-text("확인"), a:has-text("확인")').first();
+            if (await confirmBtn.count() && await confirmBtn.isVisible()) {
+              await confirmBtn.click().catch(() => {});
+              await page.waitForTimeout(500);
+              continue;
+            }
+          }
+        }
+
+        // Otherwise, if modal has a '확인' button (e.g., 개인정보 안내), click it
+        const okBtn = modal.locator('button:has-text("확인"), a:has-text("확인")').first();
+        if (await okBtn.count() && await okBtn.isVisible()) {
+          await okBtn.click().catch(() => {});
+          await page.waitForTimeout(400);
+          continue;
+        }
+
+        // If modal has '바로가기', click it and wait for navigation
+        const goBtn = modal.locator('button:has-text("바로가기"), a:has-text("바로가기")').first();
+        if (await goBtn.count() && await goBtn.isVisible()) {
+          await Promise.all([
+            page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => null),
+            goBtn.click().catch(() => {})
+          ]);
+          return;
+        }
+      }
+
+      // 3) Global '바로가기' (outside modal)
+      const globalGo = page.locator('button:has-text("바로가기"), a:has-text("바로가기")').first();
+      if (await globalGo.count() && await globalGo.isVisible()) {
+        await Promise.all([
+          page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => null),
+          globalGo.click().catch(() => {})
+        ]);
+        return;
+      }
+
+      // 4) If nothing actionable yet, try to click any '닫기' or small '확인' buttons to clear overlays conservatively
+      const extra = page.locator('button:has-text("닫기"), a:has-text("닫기")').first();
+      if (await extra.count() && await extra.isVisible()) {
+        await extra.click().catch(() => {});
+        await page.waitForTimeout(300);
+        continue;
+      }
+
+    } catch (e) {
+      // ignore transient errors and retry
+    }
+    await page.waitForTimeout(400);
+  }
+}
+
 async function run() {
   let browser;
   let context;
@@ -470,8 +547,56 @@ async function run() {
       } catch (e) {}
       await page.waitForTimeout(800);
 
-      // Dismiss any popups that appear after triggering download
-      await dismissPopups(page);
+      // Handle the expected download popups in sequence:
+      // 1) Click '다운로드 신청'
+      // 2) Click '확인'
+      // 3) Fill '확인했습니다' into the confirmation input and click 확인
+      // 4) Click '바로가기' to go to 다운로드관리자
+      try {
+        // helper to click a button/text if found
+        async function clickIfTextExists(text, timeout = 1500) {
+          const loc = page.locator(`button:has-text("${text}"), a:has-text("${text}"), input:has-text("${text}")`);
+          if (await loc.count()) {
+            await loc.first().click({ timeout }).catch(() => {});
+            return true;
+          }
+          return false;
+        }
+
+        // try clicking '다운로드 신청' if present
+        await clickIfTextExists('다운로드 신청');
+        await page.waitForTimeout(400);
+
+        // click '확인' on the 개인정보/안내 dialog
+        // try a few times with small waits to avoid racing
+        for (let i = 0; i < 3; i++) {
+          const okClicked = await clickIfTextExists('확인');
+          if (okClicked) break;
+          await page.waitForTimeout(300);
+        }
+
+        // If an input is required (the '확인했습니다' prompt), fill it
+        try {
+          const inputLocator = page.locator('div:has(button:has-text("확인")) input, .modal input, .layer input, input[type=text], input[placeholder]');
+          if (await inputLocator.count()) {
+            const firstInput = inputLocator.first();
+            await firstInput.fill('확인했습니다').catch(() => {});
+            await page.waitForTimeout(200);
+            // click confirm again
+            await clickIfTextExists('확인');
+          }
+        } catch (e) {}
+
+        await page.waitForTimeout(400);
+
+        // finally click '바로가기' to navigate to download manager
+        await clickIfTextExists('바로가기');
+        await page.waitForTimeout(600);
+
+      } catch (e) {
+        // if anything fails, still attempt to dismiss generic popups
+        await dismissPopups(page).catch(() => {});
+      }
 
       // Click download button
       try {
