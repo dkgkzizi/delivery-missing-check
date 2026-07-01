@@ -133,6 +133,33 @@ async function selectDropdownInArea(area, optionText) {
   return false;
 }
 
+async function selectOptionInAreaByLabel(area, labelText, optionText) {
+  // Find elements that look like a label/title then find a nearby select
+  const labelLocs = area.locator(`xpath=.//*[normalize-space(text())="${labelText}"]`);
+  const cnt = await labelLocs.count();
+  for (let i = 0; i < cnt; i++) {
+    try {
+      const labelEl = labelLocs.nth(i);
+      // try following select within the same container
+      const parent = await labelEl.evaluateHandle(el => el.closest('div,td,tr') || el.parentElement);
+      if (parent) {
+        const select = await parent.asElement().$('select');
+        if (select) {
+          try { await parent.asElement().evaluate((p, opt) => {
+              const s = p.querySelector('select');
+              if (!s) return;
+              for (const o of Array.from(s.options)) if (o.text.trim() === opt) { s.value = o.value; s.dispatchEvent(new Event('change')); break; }
+            }, optionText);
+            return true;
+          } catch (e) {}
+        }
+      }
+    } catch (e) {}
+  }
+  // fallback: click the visible option text inside area
+  return await selectDropdownInArea(area, optionText);
+}
+
 async function clickExactLabel(area, label) {
   const locator = area.locator(`xpath=.//a[normalize-space(text())="${label}"] | .//button[normalize-space(text())="${label}"] | .//span[normalize-space(text())="${label}"] | .//div[normalize-space(text())="${label}"]`);
   const count = await locator.count();
@@ -367,13 +394,26 @@ async function run() {
       const y = new Date(now.getTime() - 24*3600*1000);
       const yesterdayStr = y.toISOString().slice(0,10);
 
-      // Fill the date/time range
-      await fillDateFields(page, `${yesterdayStr} 16:00`, `${todayStr} 23:59`);
+      // Fill only the start date (작업일 기준 전날 16:00). Leave end date alone.
+      try {
+        const startValue = `${yesterdayStr} 16:00`;
+        // attempt to fill an input that looks like start date inside the search area
+        const startInput = searchArea.locator('input[name*=start], input[id*=start], input[placeholder*=시작], input[placeholder*=발주]');
+        if (await startInput.count()) {
+          await startInput.first().fill(startValue).catch(() => {});
+        } else {
+          // generic fallback: find inputs and fill the first empty one
+          const inputs = searchArea.locator('input');
+          if (await inputs.count()) {
+            await inputs.first().fill(startValue).catch(() => {});
+          }
+        }
+      } catch (e) {}
       await closeDatePicker(page);
 
-      // Set 상태 = 송장 and C/S = 정상+교환
-      try { await selectDropdownInArea(searchArea, '송장'); } catch (e) {}
-      try { await selectDropdownInArea(searchArea, '정상+교환'); } catch (e) {}
+      // Set 상태 = 송장 and C/S = 정상+교환 using label-scoped selection
+      try { await selectOptionInAreaByLabel(searchArea, '상태', '송장'); } catch (e) {}
+      try { await selectOptionInAreaByLabel(searchArea, 'C/S', '정상+교환'); } catch (e) {}
 
       // Click 검색
       try { await page.locator('button:has-text("검색"), input:has-text("검색")').first().click({ timeout: 5000 }); } catch (e) {}
