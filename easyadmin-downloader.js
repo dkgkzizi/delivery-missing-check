@@ -553,48 +553,61 @@ async function run() {
       // 3) Fill '확인했습니다' into the confirmation input and click 확인
       // 4) Click '바로가기' to go to 다운로드관리자
       try {
-        // helper to click a button/text if found
-        async function clickIfTextExists(text, timeout = 1500) {
-          const loc = page.locator(`button:has-text("${text}"), a:has-text("${text}"), input:has-text("${text}")`);
-          if (await loc.count()) {
-            await loc.first().click({ timeout }).catch(() => {});
-            return true;
-          }
-          return false;
+        // Prefer handling SweetAlert (Swal.fire) modals explicitly to avoid clicking other '확인' buttons.
+        // Wait briefly for any modal to appear
+        const swalPopup = page.locator('.swal2-container .swal2-popup, .swal2-popup');
+        const genericModal = page.locator('.modal, .layer, .ui-dialog');
+
+        // If there's an inline '다운로드 신청' button (non-swal) click it first
+        const applyBtn = page.locator('button:has-text("다운로드 신청"), a:has-text("다운로드 신청")').filter({ hasText: '다운로드 신청' }).first();
+        if (await applyBtn.count()) {
+          await applyBtn.click({ timeout: 1200 }).catch(() => {});
+          await page.waitForTimeout(500);
         }
 
-        // try clicking '다운로드 신청' if present
-        await clickIfTextExists('다운로드 신청');
-        await page.waitForTimeout(400);
-
-        // click '확인' on the 개인정보/안내 dialog
-        // try a few times with small waits to avoid racing
-        for (let i = 0; i < 3; i++) {
-          const okClicked = await clickIfTextExists('확인');
-          if (okClicked) break;
-          await page.waitForTimeout(300);
+        // Wait for Swal popup with input
+        if (await swalPopup.count()) {
+          try {
+            await swalPopup.first().waitFor({ state: 'visible', timeout: 2000 });
+            // fill the swal input if present
+            const swalInput = page.locator('.swal2-container .swal2-input, .swal2-input').first();
+            if (await swalInput.count()) {
+              await swalInput.fill('확인했습니다').catch(() => {});
+              await page.waitForTimeout(200);
+            }
+            // click swal confirm inside the popup
+            const swalConfirm = page.locator('.swal2-container .swal2-confirm, .swal2-confirm').first();
+            if (await swalConfirm.count()) {
+              await swalConfirm.click({ timeout: 1200 }).catch(() => {});
+            }
+            await page.waitForTimeout(500);
+          } catch (e) {}
+        } else if (await genericModal.count()) {
+          // fallback: try to scope to visible modal and input
+          try {
+            const visModal = genericModal.filter({ has: page.locator('input, button:has-text("확인")') }).first();
+            if (await visModal.count()) {
+              const textInput = visModal.locator('input[type=text], input').first();
+              if (await textInput.count()) {
+                await textInput.fill('확인했습니다').catch(() => {});
+                await page.waitForTimeout(200);
+              }
+              const okBtn = visModal.locator('button:has-text("확인"), a:has-text("확인")').first();
+              if (await okBtn.count()) await okBtn.click({ timeout: 1200 }).catch(() => {});
+            }
+          } catch (e) {}
         }
 
-        // If an input is required (the '확인했습니다' prompt), fill it
+        // After confirming the input dialog, click '바로가기' inside any visible modal or on page
         try {
-          const inputLocator = page.locator('div:has(button:has-text("확인")) input, .modal input, .layer input, input[type=text], input[placeholder]');
-          if (await inputLocator.count()) {
-            const firstInput = inputLocator.first();
-            await firstInput.fill('확인했습니다').catch(() => {});
-            await page.waitForTimeout(200);
-            // click confirm again
-            await clickIfTextExists('확인');
+          const gotoBtn = page.locator('button:has-text("바로가기"), a:has-text("바로가기")').filter({ hasText: '바로가기' }).first();
+          if (await gotoBtn.count()) {
+            await gotoBtn.click({ timeout: 1200 }).catch(() => {});
+            await page.waitForTimeout(600);
           }
         } catch (e) {}
 
-        await page.waitForTimeout(400);
-
-        // finally click '바로가기' to navigate to download manager
-        await clickIfTextExists('바로가기');
-        await page.waitForTimeout(600);
-
       } catch (e) {
-        // if anything fails, still attempt to dismiss generic popups
         await dismissPopups(page).catch(() => {});
       }
 
